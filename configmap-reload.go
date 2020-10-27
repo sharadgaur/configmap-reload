@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	fsnotify "github.com/fsnotify/fsnotify"
@@ -26,6 +29,8 @@ var (
 	webhookRetries    = flag.Int("webhook-retries", 1, "the amount of times to retry the webhook reload request")
 	listenAddress     = flag.String("web.listen-address", ":9533", "Address to listen on for web interface and telemetry.")
 	metricPath        = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
+	filePattern       = flag.String("file-pattern", "*.yaml", "File pattern to watch and update")
+	envPrefix         = flag.String("env-prefix", "CFM_", "Environment variable prefix")
 
 	lastReloadError = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: namespace,
@@ -101,6 +106,12 @@ func main() {
 					continue
 				}
 				log.Println("config map updated")
+				for _, dir := range volumeDirs {
+					err := filepath.Walk(dir, updateFile)
+					if err != nil {
+						panic(err)
+					}
+				}
 				for _, h := range webhook {
 					begun := time.Now()
 					req, err := http.NewRequest(*webhookMethod, h.String(), nil)
@@ -165,6 +176,57 @@ func main() {
 	log.Fatal(serverMetrics(*listenAddress, *metricPath))
 }
 
+func initEnvMap() map[string]string {
+	env := make(map[string]string)
+	for _, e := range os.Environ() {
+		pair := strings.SplitN(e, "=", 2)
+		if strings.HasPrefix(pair[0], *envPrefix) {
+			env[pair[0]] = pair[1]
+		}
+	}
+	return env
+}
+func updateFile(path string, fi os.FileInfo, err error) error {
+	envMap := initEnvMap()
+	if len(envMap) == 0 {
+		log.Printf("No environment variable with prefix %s found", *envPrefix)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if !!fi.IsDir() {
+		return nil 
+	}
+
+	matched, err := filepath.Match(*filePattern, fi.Name())
+
+	if err != nil {
+		log.Println("Error Reading files from dir", err)
+		return err
+	}
+
+	if matched {
+		read, err := ioutil.ReadFile(path)
+		if err != nil {
+			panic(err)
+		}
+		log.Printf("Updating file %s", path)
+
+		for key, value := range envMap {
+			read = bytes.Replace(read, []byte(key), []byte(value), -1)
+		}
+
+		err = ioutil.WriteFile(path, read, 0666)
+		if err != nil {
+			panic(err)
+		}
+
+	}
+
+	return nil
+}
 func setFailureMetrics(h, reason string) {
 	requestErrorsByReason.WithLabelValues(h, reason).Inc()
 	lastReloadError.WithLabelValues(h).Set(1.0)
