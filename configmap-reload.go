@@ -30,6 +30,7 @@ var (
 	listenAddress     = flag.String("web.listen-address", ":9533", "Address to listen on for web interface and telemetry.")
 	metricPath        = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
 	filePattern       = flag.String("file-pattern", "*.yml", "File pattern to watch and update")
+	writeToPattern    = flag.String("write-to-path", "/etc/prometheus-updated", "File pattern to watch and update")
 	envPrefix         = flag.String("env-prefix", "CFM_", "Environment variable prefix")
 
 	lastReloadError = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -105,7 +106,7 @@ func main() {
 				if !isValidEvent(event) {
 					continue
 				}
-				log.Println("config map updated")
+				log.Println("config map updated" + event.Name)
 				err := filepath.Walk(event.Name, updateFile)
 				if err != nil {
 					log.Println("Unable to patch files error:", err)
@@ -181,6 +182,7 @@ func initEnvMap() map[string]string {
 		pair := strings.SplitN(e, "=", 2)
 		if strings.HasPrefix(pair[0], *envPrefix) {
 			env[pair[0]] = pair[1]
+			log.Printf("Env Prefix %s=%s", pair[0], pair[1])
 		}
 	}
 	return env
@@ -200,6 +202,7 @@ func updateFile(path string, fi os.FileInfo, err error) error {
 	}
 
 	matched, err := filepath.Match(*filePattern, fi.Name())
+	log.Printf("Checking file %s mached %v", fi.Name(), matched)
 
 	if err != nil {
 		log.Println("Error Reading files from dir", err)
@@ -216,10 +219,11 @@ func updateFile(path string, fi os.FileInfo, err error) error {
 		for key, value := range envMap {
 			read = bytes.Replace(read, []byte(key), []byte(value), -1)
 		}
-
-		err = ioutil.WriteFile(path, read, 0666)
+		finalFilePath := filepath.Join(*writeToPattern, fi.Name())
+		log.Printf("Updating file %v", finalFilePath)
+		err = ioutil.WriteFile(finalFilePath, read, 0666)
 		if err != nil {
-			panic(err)
+			log.Println("Unable to update file "+path, err)
 		}
 
 	}
