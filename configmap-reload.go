@@ -29,7 +29,7 @@ var (
 	webhookRetries    = flag.Int("webhook-retries", 1, "the amount of times to retry the webhook reload request")
 	listenAddress     = flag.String("web.listen-address", ":9533", "Address to listen on for web interface and telemetry.")
 	metricPath        = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
-	filePattern       = flag.String("file-pattern", "*.yaml", "File pattern to watch and update")
+	filePattern       = flag.String("file-pattern", "*.yml", "File pattern to watch and update")
 	envPrefix         = flag.String("env-prefix", "CFM_", "Environment variable prefix")
 
 	lastReloadError = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -106,12 +106,11 @@ func main() {
 					continue
 				}
 				log.Println("config map updated")
-				for _, dir := range volumeDirs {
-					err := filepath.Walk(dir, updateFile)
-					if err != nil {
-						panic(err)
-					}
+				err := filepath.Walk(event.Name, updateFile)
+				if err != nil {
+					log.Println("Unable to patch files error:", err)
 				}
+
 				for _, h := range webhook {
 					begun := time.Now()
 					req, err := http.NewRequest(*webhookMethod, h.String(), nil)
@@ -197,7 +196,7 @@ func updateFile(path string, fi os.FileInfo, err error) error {
 	}
 
 	if !!fi.IsDir() {
-		return nil 
+		return nil
 	}
 
 	matched, err := filepath.Match(*filePattern, fi.Name())
