@@ -11,7 +11,7 @@ It watches mounted volume dirs and notifies the target process that the config m
 It currently only supports sending an HTTP request, but in future it is expected to support sending OS
 (e.g. SIGHUP) once Kubernetes supports pod PID namespaces.
 
-It is available as a Docker image at https://hub.docker.com/r/jimmidyson/configmap-reload
+It is available as a Docker image at https://hub.docker.com/r/sharadgaur/configmap-reload
 
 ### Usage
 
