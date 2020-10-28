@@ -168,6 +168,13 @@ func main() {
 	}()
 
 	for _, d := range volumeDirs {
+		log.Println("Pre config map updated" + d)
+		err := filepath.Walk(d, updateFile)
+		if err != nil {
+			log.Println("Unable to patch files error:", err)
+		}
+	}
+	for _, d := range volumeDirs {
 		log.Printf("Watching directory: %q", d)
 		err = watcher.Add(d)
 		if err != nil {
@@ -199,7 +206,7 @@ func updateFile(path string, fi os.FileInfo, err error) error {
 	}
 
 	if !!fi.IsDir() {
-		log.Printf("is not directory? %s ", path)
+		log.Printf("is not file? %s ", path)
 		return nil
 	}
 
@@ -217,7 +224,6 @@ func updateFile(path string, fi os.FileInfo, err error) error {
 			log.Println("Error reading file "+path, err)
 			return err
 		}
-		log.Printf("Updating file %s", path)
 
 		for key, value := range envMap {
 			read = bytes.Replace(read, []byte(key), []byte(value), -1)
