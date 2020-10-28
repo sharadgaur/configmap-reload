@@ -106,10 +106,12 @@ func main() {
 				if !isValidEvent(event) {
 					continue
 				}
-				log.Println("config map updated" + event.Name)
-				err := filepath.Walk(event.Name, updateFile)
-				if err != nil {
-					log.Println("Unable to patch files error:", err)
+				for _, d := range volumeDirs {
+					log.Println("config map updated" + d)
+					err := filepath.Walk(d, updateFile)
+					if err != nil {
+						log.Println("Unable to patch files error:", err)
+					}
 				}
 
 				for _, h := range webhook {
@@ -191,13 +193,13 @@ func updateFile(path string, fi os.FileInfo, err error) error {
 	envMap := initEnvMap()
 	if len(envMap) == 0 {
 		log.Printf("No environment variable with prefix %s found", *envPrefix)
-		return nil
 	}
 	if err != nil {
 		return err
 	}
 
 	if !!fi.IsDir() {
+		log.Printf("is not directory? %s ", path)
 		return nil
 	}
 
@@ -212,7 +214,8 @@ func updateFile(path string, fi os.FileInfo, err error) error {
 	if matched {
 		read, err := ioutil.ReadFile(path)
 		if err != nil {
-			panic(err)
+			log.Println("Error reading file "+path, err)
+			return err
 		}
 		log.Printf("Updating file %s", path)
 
@@ -224,6 +227,7 @@ func updateFile(path string, fi os.FileInfo, err error) error {
 		err = ioutil.WriteFile(finalFilePath, read, 0666)
 		if err != nil {
 			log.Println("Unable to update file "+path, err)
+			return err
 		}
 
 	}
