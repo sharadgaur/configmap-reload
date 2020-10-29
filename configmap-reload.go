@@ -22,16 +22,18 @@ import (
 const namespace = "configmap_reload"
 
 var (
-	volumeDirs        volumeDirsFlag
-	webhook           webhookFlag
-	webhookMethod     = flag.String("webhook-method", "POST", "the HTTP method url to use to send the webhook")
-	webhookStatusCode = flag.Int("webhook-status-code", 200, "the HTTP status code indicating successful triggering of reload")
-	webhookRetries    = flag.Int("webhook-retries", 1, "the amount of times to retry the webhook reload request")
-	listenAddress     = flag.String("web.listen-address", ":9533", "Address to listen on for web interface and telemetry.")
-	metricPath        = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
-	filePattern       = flag.String("file-pattern", "*.yml", "File pattern to watch and update")
-	writeToPattern    = flag.String("write-to-path", "/etc/prometheus-updated", "File pattern to watch and update")
-	envPrefix         = flag.String("env-prefix", "CFM_", "Environment variable prefix")
+	volumeDirs          volumeDirsFlag
+	webhook             webhookFlag
+	webhookMethod       = flag.String("webhook-method", "POST", "the HTTP method url to use to send the webhook")
+	webhookStatusCode   = flag.Int("webhook-status-code", 200, "the HTTP status code indicating successful triggering of reload")
+	webhookRetries      = flag.Int("webhook-retries", 1, "the amount of times to retry the webhook reload request")
+	listenAddress       = flag.String("web.listen-address", ":9533", "Address to listen on for web interface and telemetry.")
+	metricPath          = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
+	filePattern         = flag.String("file-pattern", "*.yml", "File pattern to watch and update")
+	writeToPattern      = flag.String("write-to-path", "/etc/prometheus-updated", "File pattern to watch and update")
+	envPrefix           = flag.String("env-prefix", "CFM_", "Environment variable prefix")
+	initSleepTime       = flag.Int("init-sleep-time", 10, "sleep time in seconds")
+	runsAsInitContianer = flag.Bool("run-as-init-container", false, "Run it as init container")
 
 	lastReloadError = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: namespace,
@@ -167,12 +169,20 @@ func main() {
 		}
 	}()
 
+	if *runsAsInitContianer {
+		time.Sleep(time.Duration(*initSleepTime) * time.Second)
+	}
 	for _, d := range volumeDirs {
 		log.Println("Pre config map updated" + d)
 		err := filepath.Walk(d, updateFile)
 		if err != nil {
 			log.Println("Unable to patch files error:", err)
 		}
+	}
+
+	if *runsAsInitContianer {
+		log.Println("Running as init container")
+		os.Exit(0)
 	}
 	for _, d := range volumeDirs {
 		log.Printf("Watching directory: %q", d)
@@ -191,7 +201,6 @@ func initEnvMap() map[string]string {
 		pair := strings.SplitN(e, "=", 2)
 		if strings.HasPrefix(pair[0], *envPrefix) {
 			env[pair[0]] = pair[1]
-			log.Printf("Env Prefix %s=%s", pair[0], pair[1])
 		}
 	}
 	return env
@@ -206,8 +215,13 @@ func updateFile(path string, fi os.FileInfo, err error) error {
 	}
 
 	if !!fi.IsDir() {
+		for _, d := range volumeDirs {
+			if d == path {
+				return nil
+			}
+		}
 		log.Printf("is not file? %s ", path)
-		return nil
+		return filepath.SkipDir
 	}
 
 	matched, err := filepath.Match(*filePattern, fi.Name())
